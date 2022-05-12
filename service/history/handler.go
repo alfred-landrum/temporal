@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
@@ -550,6 +551,18 @@ func (h *Handler) RespondWorkflowTaskFailed(ctx context.Context, request *histor
 func (h *Handler) StartWorkflowExecution(ctx context.Context, request *historyservice.StartWorkflowExecutionRequest) (_ *historyservice.StartWorkflowExecutionResponse, retError error) {
 	defer log.CapturePanic(h.logger, &retError)
 	h.startWG.Wait()
+
+	{
+		var durationDeadline time.Duration
+		deadline, ok := ctx.Deadline()
+		if ok {
+			durationDeadline = deadline.Sub(time.Now())
+		}
+		h.logger.Warn("alfred: history handler StartWorkflowExecution",
+			tag.NewStringTag("RequestId", request.StartRequest.RequestId),
+			tag.WorkflowID(request.StartRequest.GetWorkflowId()),
+			tag.NewDurationTag("durationDeadline", durationDeadline))
+	}
 
 	namespaceID := namespace.ID(request.GetNamespaceId())
 	if namespaceID == "" {

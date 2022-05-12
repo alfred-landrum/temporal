@@ -64,6 +64,8 @@ func NewClient(
 	clients common.ClientCache,
 	logger log.Logger,
 ) historyservice.HistoryServiceClient {
+	logger.Warn("alfred: new history client", tag.NewStringTag("timeout", timeout.String()))
+
 	return &clientImpl{
 		numberOfShards:  numberOfShards,
 		tokenSerializer: common.NewProtoTaskTokenSerializer(),
@@ -87,6 +89,9 @@ func (c *clientImpl) StartWorkflowExecution(
 		var err error
 		ctx, cancel := c.createContext(ctx)
 		defer cancel()
+		c.logger.Warn("alfred: history client StartWorkflowExecution",
+			tag.NewStringTag("RequestId", request.StartRequest.RequestId),
+			tag.WorkflowID(request.StartRequest.WorkflowId), tag.NewStringTag("timeout", c.timeout.String()))
 		response, err = client.StartWorkflowExecution(ctx, request, opts...)
 		return err
 	}
