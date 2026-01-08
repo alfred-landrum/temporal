@@ -69,6 +69,7 @@ require (
 	golang.org/x/sync v0.18.0
 	golang.org/x/text v0.31.0
 	golang.org/x/time v0.10.0
+	gonum.org/v1/gonum v0.16.0
 	google.golang.org/api v0.224.0
 	google.golang.org/grpc v1.72.2
 	google.golang.org/protobuf v1.36.6
