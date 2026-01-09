@@ -93,8 +93,8 @@ func (p *Plugin) Run(plugin *protogen.Plugin) error {
 		w.println(`"go.temporal.io/server/common/dynamicconfig"`)
 		w.println(`"go.temporal.io/server/common/headers"`)
 		w.println(`"go.temporal.io/server/common/log"`)
-		w.println(`"go.temporal.io/server/common/membership"`)
 		w.println(`"go.temporal.io/server/common/metrics"`)
+		w.println(`"go.temporal.io/server/common/ownership"`)
 		w.println(`"google.golang.org/grpc"`)
 		w.unindent()
 		w.println(")")
@@ -196,27 +196,21 @@ func (p *Plugin) genClient(w *writer, svc *protogen.Service) error {
 	w.indent()
 	w.println("dc *dynamicconfig.Collection,")
 	w.println("rpcFactory     common.RPCFactory,")
-	w.println("monitor        membership.Monitor,")
+	w.println("watcher        ownership.HistoryShardWatcher,")
 	w.println("config         *config.Persistence,")
 	w.println("logger         log.Logger,")
 	w.println("metricsHandler metrics.Handler,")
 	w.unindent()
 	w.println(") (%sClient, error) {", svc.GoName)
 	w.indent() // start ctor body
-	w.println("resolver, err := monitor.GetResolver(primitives.HistoryService)")
-	w.println("if err != nil {")
-	w.indent()
-	w.println("return nil, err")
-	w.unindent()
-	w.println("}")
-	w.println("connections := history.NewConnectionPool(resolver, rpcFactory, New%sClient)", svc.GoName)
+	w.println("connections := history.NewConnectionPool(watcher, rpcFactory, New%sClient)", svc.GoName)
 	w.println("var redirector history.Redirector[%sClient]", svc.GoName)
 	w.println("if dynamicconfig.HistoryClientOwnershipCachingEnabled.Get(dc)() {")
 	w.indent() // start if
 	w.println("redirector = history.NewCachingRedirector(")
 	w.indent() // start args
 	w.println("connections,")
-	w.println("resolver,")
+	w.println("watcher,")
 	w.println("logger,")
 	w.println("dynamicconfig.HistoryClientOwnershipCachingStaleTTL.Get(dc),")
 	w.unindent() // close args
@@ -224,7 +218,7 @@ func (p *Plugin) genClient(w *writer, svc *protogen.Service) error {
 	w.unindent() // close if
 	w.println("} else {")
 	w.indent() // start else
-	w.println("redirector = history.NewBasicRedirector(connections, resolver)")
+	w.println("redirector = history.NewBasicRedirector(connections, watcher)")
 	w.unindent() // close else
 	w.println("}")
 	w.println("return &%s{", structName)

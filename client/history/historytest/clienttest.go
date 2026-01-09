@@ -18,7 +18,7 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/dynamicconfig"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/persistence"
 	"go.temporal.io/server/common/persistence/persistencetest"
 	"go.temporal.io/server/common/testing/nettest"
@@ -146,16 +146,16 @@ func createServer(historyTaskQueueManager persistence.HistoryTaskQueueManager) *
 }
 
 func createClient(ctrl *gomock.Controller, listener *nettest.PipeListener) historyservice.HistoryServiceClient {
-	serviceResolver := membership.NewMockServiceResolver(ctrl)
-	address := membership.NewHostInfoFromAddress("127.0.0.1:7104")
-	serviceResolver.EXPECT().Members().Return([]membership.HostInfo{
+	shardWatcher := ownership.NewMockHistoryShardWatcher(ctrl)
+	address := "127.0.0.1:7104"
+	shardWatcher.EXPECT().Owners().Return([]ownership.Address{
 		address,
 	}).AnyTimes()
-	serviceResolver.EXPECT().Lookup(gomock.Any()).Return(address, nil).AnyTimes()
+	shardWatcher.EXPECT().OwnershipStatus(gomock.Any()).Return(ownership.Status{Owner: address}, nil).AnyTimes()
 	rpcFactory := nettest.NewRPCFactory(listener)
 	client := history.NewClient(
 		dynamicconfig.NewNoopCollection(),
-		serviceResolver,
+		shardWatcher,
 		log.NewTestLogger(),
 		1,
 		rpcFactory,

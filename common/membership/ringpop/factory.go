@@ -56,7 +56,7 @@ type factory struct {
 	DC              *dynamicconfig.Collection
 
 	channel *tchannel.Channel
-	monitor *monitor
+	monitor *Monitor
 	chOnce  sync.Once
 	monOnce sync.Once
 }
@@ -87,7 +87,7 @@ func newFactory(params factoryParams) (*factory, error) {
 }
 
 // getMonitor returns a membership monitor
-func (factory *factory) getMonitor() *monitor {
+func (factory *factory) getMonitor() *Monitor {
 	factory.monOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), persistenceOperationTimeout)
 		defer cancel()

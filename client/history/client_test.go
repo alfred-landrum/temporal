@@ -2,6 +2,7 @@ package history_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	"go.temporal.io/server/client/history"
 	"go.temporal.io/server/common/dynamicconfig"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/testing/nettest"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
@@ -31,11 +32,12 @@ func TestErrLookup(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	serviceResolver := membership.NewMockServiceResolver(ctrl)
-	serviceResolver.EXPECT().Lookup(gomock.Any()).Return(nil, membership.ErrInsufficientHosts).AnyTimes()
+	shardWatcher := ownership.NewMockHistoryShardWatcher(ctrl)
+	testErr := errors.New("test error")
+	shardWatcher.EXPECT().OwnershipStatus(gomock.Any()).Return(ownership.Status{}, testErr).AnyTimes()
 	client := history.NewClient(
 		dynamicconfig.NewNoopCollection(),
-		serviceResolver,
+		shardWatcher,
 		log.NewTestLogger(),
 		1,
 		nil,
@@ -64,7 +66,7 @@ func TestErrLookup(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			err := tc.fn()
-			require.ErrorIs(t, err, membership.ErrInsufficientHosts)
+			require.ErrorIs(t, err, testErr)
 		})
 	}
 }
@@ -98,12 +100,12 @@ func TestShardAgnosticConnectionStrategy(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
 
-			// Create a service resolver that just returns 2 hosts for the first 3 requests. We want to send 3 requests
+			// Create a shard watcher that just returns 2 hosts for the first 3 requests. We want to send 3 requests
 			// with 2 hosts so that we can verify that we re-use the connection of "test1" on the last request.
-			serviceResolver := membership.NewMockServiceResolver(ctrl)
-			serviceResolver.EXPECT().Lookup(gomock.Any()).Return(membership.NewHostInfoFromAddress("localhost"), nil)
-			serviceResolver.EXPECT().Lookup(gomock.Any()).Return(membership.NewHostInfoFromAddress("127.0.0.1"), nil)
-			serviceResolver.EXPECT().Lookup(gomock.Any()).Return(membership.NewHostInfoFromAddress("localhost"), nil)
+			shardWatcher := ownership.NewMockHistoryShardWatcher(ctrl)
+			shardWatcher.EXPECT().OwnershipStatus(gomock.Any()).Return(ownership.Status{Owner: "localhost"}, nil)
+			shardWatcher.EXPECT().OwnershipStatus(gomock.Any()).Return(ownership.Status{Owner: "127.0.0.1"}, nil)
+			shardWatcher.EXPECT().OwnershipStatus(gomock.Any()).Return(ownership.Status{Owner: "localhost"}, nil)
 
 			// Create an in-memory gRPC server.
 			listener := nettest.NewListener(nettest.NewPipe())
@@ -125,7 +127,7 @@ func TestShardAgnosticConnectionStrategy(t *testing.T) {
 			// Send 3 requests to verify that we re-use a connection for the last request.
 			client := history.NewClient(
 				dynamicconfig.NewNoopCollection(),
-				serviceResolver,
+				shardWatcher,
 				log.NewTestLogger(),
 				2,
 				rpcFactory,

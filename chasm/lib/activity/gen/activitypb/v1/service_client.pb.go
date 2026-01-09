@@ -12,9 +12,8 @@ import (
 	"go.temporal.io/server/common/dynamicconfig"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
-	"go.temporal.io/server/common/membership"
 	"go.temporal.io/server/common/metrics"
-	"go.temporal.io/server/common/primitives"
+	"go.temporal.io/server/common/ownership"
 	"google.golang.org/grpc"
 )
 
@@ -30,26 +29,22 @@ type ActivityServiceLayeredClient struct {
 func NewActivityServiceLayeredClient(
 	dc *dynamicconfig.Collection,
 	rpcFactory common.RPCFactory,
-	monitor membership.Monitor,
+	watcher ownership.HistoryShardWatcher,
 	config *config.Persistence,
 	logger log.Logger,
 	metricsHandler metrics.Handler,
 ) (ActivityServiceClient, error) {
-	resolver, err := monitor.GetResolver(primitives.HistoryService)
-	if err != nil {
-		return nil, err
-	}
-	connections := history.NewConnectionPool(resolver, rpcFactory, NewActivityServiceClient)
+	connections := history.NewConnectionPool(watcher, rpcFactory, NewActivityServiceClient)
 	var redirector history.Redirector[ActivityServiceClient]
 	if dynamicconfig.HistoryClientOwnershipCachingEnabled.Get(dc)() {
 		redirector = history.NewCachingRedirector(
 			connections,
-			resolver,
+			watcher,
 			logger,
 			dynamicconfig.HistoryClientOwnershipCachingStaleTTL.Get(dc),
 		)
 	} else {
-		redirector = history.NewBasicRedirector(connections, resolver)
+		redirector = history.NewBasicRedirector(connections, watcher)
 	}
 	return &ActivityServiceLayeredClient{
 		metricsHandler: metricsHandler,

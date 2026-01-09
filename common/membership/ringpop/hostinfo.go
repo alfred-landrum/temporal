@@ -1,4 +1,4 @@
-// Package ringpop provides a service-based membership monitor
+// Package ringpop provides a service-based membership Monitor
 package ringpop
 
 import (

@@ -47,7 +47,7 @@ const (
 	maxScheduledEventTimeSeconds = 15
 )
 
-type monitor struct {
+type Monitor struct {
 	stateLock sync.Mutex
 	status    int32
 
@@ -68,7 +68,7 @@ type monitor struct {
 	initialized               *future.FutureImpl[struct{}]
 }
 
-var _ membership.Monitor = (*monitor)(nil)
+var _ membership.Monitor = (*Monitor)(nil)
 
 // newMonitor returns a ringpop-based membership monitor
 func newMonitor(
@@ -81,7 +81,7 @@ func newMonitor(
 	maxJoinDuration time.Duration,
 	propagationTime time.Duration,
 	joinTime time.Time,
-) *monitor {
+) *Monitor {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	lifecycleCtx = headers.SetCallerInfo(
 		lifecycleCtx,
@@ -90,7 +90,7 @@ func newMonitor(
 	hostID, _ := uuid.New().MarshalBinary()
 	// MarshalBinary should never error.
 
-	rpo := &monitor{
+	rpo := &Monitor{
 		status: common.DaemonStatusInitialized,
 
 		lifecycleCtx:    lifecycleCtx,
@@ -118,7 +118,7 @@ func newMonitor(
 // Start the membership monitor. Stop() can be called concurrently so we relinquish the state lock when
 // it's safe for Stop() to run, which is at any point when we are neither updating the status field nor
 // starting rings
-func (rpo *monitor) Start() {
+func (rpo *Monitor) Start() {
 	rpo.stateLock.Lock()
 	if rpo.status != common.DaemonStatusInitialized {
 		rpo.stateLock.Unlock()
@@ -184,7 +184,7 @@ func (rpo *monitor) Start() {
 }
 
 // bootstrap ring pop service by discovering the bootstrap hosts and joining the ring pop cluster
-func (rpo *monitor) bootstrapRingPop() error {
+func (rpo *Monitor) bootstrapRingPop() error {
 	policy := backoff.NewExponentialRetryPolicy(healthyHostLastHeartbeatCutoff / 2).
 		WithBackoffCoefficient(1).
 		WithMaximumAttempts(maxBootstrapRetries)
@@ -214,7 +214,7 @@ func (rpo *monitor) bootstrapRingPop() error {
 	return nil
 }
 
-func (rpo *monitor) clearStartAt() {
+func (rpo *Monitor) clearStartAt() {
 	// We can ignore all errors here, they're probably because we shut down already.
 	// This is just to clean up the startAt label.
 	if labels, err := rpo.rp.Labels(); err == nil {
@@ -222,7 +222,7 @@ func (rpo *monitor) clearStartAt() {
 	}
 }
 
-func (rpo *monitor) WaitUntilInitialized(ctx context.Context) error {
+func (rpo *Monitor) WaitUntilInitialized(ctx context.Context) error {
 	_, err := rpo.initialized.Get(ctx)
 	return err
 }
@@ -246,7 +246,7 @@ func serviceNameToServiceTypeEnum(name primitives.ServiceName) (persistence.Serv
 	}
 }
 
-func (rpo *monitor) upsertMyMembership(
+func (rpo *Monitor) upsertMyMembership(
 	ctx context.Context,
 	request *persistence.UpsertClusterMembershipRequest,
 ) error {
@@ -282,7 +282,7 @@ func splitHostPortTyped(hostPort string) (net.IP, uint16, error) {
 	return broadcastAddress, uint16(broadcastPort), nil
 }
 
-func (rpo *monitor) startHeartbeat(broadcastHostport string) error {
+func (rpo *Monitor) startHeartbeat(broadcastHostport string) error {
 	// Start by cleaning up expired records to avoid growth
 	err := rpo.metadataManager.PruneClusterMembership(rpo.lifecycleCtx, &persistence.PruneClusterMembershipRequest{MaxRecordsPruned: 10})
 	if err != nil {
@@ -334,7 +334,7 @@ func (rpo *monitor) startHeartbeat(broadcastHostport string) error {
 	return err
 }
 
-func (rpo *monitor) fetchCurrentBootstrapHostports() ([]string, error) {
+func (rpo *Monitor) fetchCurrentBootstrapHostports() ([]string, error) {
 	pageSize := 1000
 	set := make(map[string]struct{})
 
@@ -372,7 +372,7 @@ func (rpo *monitor) fetchCurrentBootstrapHostports() ([]string, error) {
 	}
 }
 
-func (rpo *monitor) startHeartbeatUpsertLoop(request *persistence.UpsertClusterMembershipRequest) {
+func (rpo *Monitor) startHeartbeatUpsertLoop(request *persistence.UpsertClusterMembershipRequest) {
 	loopUpsertMembership := func() {
 		for {
 			select {
@@ -397,7 +397,7 @@ func (rpo *monitor) startHeartbeatUpsertLoop(request *persistence.UpsertClusterM
 // Stop the membership monitor and all associated rings. This holds the state lock
 // for the entire call as the individual ring Start/Stop functions may not be safe to
 // call concurrently
-func (rpo *monitor) Stop() {
+func (rpo *Monitor) Stop() {
 	rpo.stateLock.Lock()
 	defer rpo.stateLock.Unlock()
 	if rpo.status != common.DaemonStatusStarted {
@@ -414,11 +414,11 @@ func (rpo *monitor) Stop() {
 	rpo.rp.Destroy()
 }
 
-func (rpo *monitor) EvictSelf() error {
+func (rpo *Monitor) EvictSelf() error {
 	return rpo.rp.SelfEvict()
 }
 
-func (rpo *monitor) EvictSelfAt(asOf time.Time) (time.Duration, error) {
+func (rpo *Monitor) EvictSelfAt(asOf time.Time) (time.Duration, error) {
 	until := time.Until(asOf)
 	if until <= 0 || until.Seconds() >= maxScheduledEventTimeSeconds {
 		return 0, rpo.rp.SelfEvict()
@@ -442,7 +442,7 @@ func (rpo *monitor) EvictSelfAt(asOf time.Time) (time.Duration, error) {
 	return leaveAfter + rpo.propagationTime, nil
 }
 
-func (rpo *monitor) GetResolver(service primitives.ServiceName) (membership.ServiceResolver, error) {
+func (rpo *Monitor) GetResolver(service primitives.ServiceName) (membership.ServiceResolver, error) {
 	ring, found := rpo.rings[service]
 	if !found {
 		return nil, membership.ErrUnknownService
@@ -450,11 +450,11 @@ func (rpo *monitor) GetResolver(service primitives.ServiceName) (membership.Serv
 	return ring, nil
 }
 
-func (rpo *monitor) GetReachableMembers() ([]string, error) {
+func (rpo *Monitor) GetReachableMembers() ([]string, error) {
 	return rpo.rp.GetReachableMembers()
 }
 
-func (rpo *monitor) SetDraining(draining bool) error {
+func (rpo *Monitor) SetDraining(draining bool) error {
 	labels, err := rpo.rp.Labels()
 	if err != nil {
 		// This only happens if ringpop is not bootstrapped yet.
@@ -463,7 +463,7 @@ func (rpo *monitor) SetDraining(draining bool) error {
 	return labels.Set(drainingKey, strconv.FormatBool(draining))
 }
 
-func (rpo *monitor) ApproximateMaxPropagationTime() time.Duration {
+func (rpo *Monitor) ApproximateMaxPropagationTime() time.Duration {
 	return rpo.propagationTime
 }
 

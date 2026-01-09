@@ -5,8 +5,7 @@ import (
 	"errors"
 
 	"go.temporal.io/server/common"
-	"go.temporal.io/server/common/convert"
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	serviceerrors "go.temporal.io/server/common/serviceerror"
 )
 
@@ -22,26 +21,26 @@ type (
 	ClientOperation[C any] func(ctx context.Context, client C) error
 
 	BasicRedirector[C any] struct {
-		connections            connectionPool[C]
-		historyServiceResolver membership.ServiceResolver
+		connections         connectionPool[C]
+		historyShardWatcher ownership.HistoryShardWatcher
 	}
 )
 
-func shardLookup(resolver membership.ServiceResolver, shardID int32) (rpcAddress, error) {
-	hostInfo, err := resolver.Lookup(convert.Int32ToString(shardID))
+func shardLookup(watcher ownership.HistoryShardWatcher, shardID int32) (rpcAddress, error) {
+	status, err := watcher.OwnershipStatus(shardID)
 	if err != nil {
 		return "", err
 	}
-	return rpcAddress(hostInfo.GetAddress()), nil
+	return rpcAddress(status.Owner), nil
 }
 
 func NewBasicRedirector[C any](
 	connections connectionPool[C],
-	historyServiceResolver membership.ServiceResolver,
+	historyShardWatcher ownership.HistoryShardWatcher,
 ) *BasicRedirector[C] {
 	return &BasicRedirector[C]{
-		connections:            connections,
-		historyServiceResolver: historyServiceResolver,
+		connections:         connections,
+		historyShardWatcher: historyShardWatcher,
 	}
 }
 
@@ -50,7 +49,7 @@ func (r *BasicRedirector[C]) clientForShardID(shardID int32) (C, error) {
 	if err := checkShardID(shardID); err != nil {
 		return zero, err
 	}
-	address, err := shardLookup(r.historyServiceResolver, shardID)
+	address, err := shardLookup(r.historyShardWatcher, shardID)
 	if err != nil {
 		return zero, err
 	}
@@ -62,7 +61,7 @@ func (r *BasicRedirector[C]) Execute(ctx context.Context, shardID int32, op Clie
 	if err := checkShardID(shardID); err != nil {
 		return err
 	}
-	address, err := shardLookup(r.historyServiceResolver, shardID)
+	address, err := shardLookup(r.historyShardWatcher, shardID)
 	if err != nil {
 		return err
 	}

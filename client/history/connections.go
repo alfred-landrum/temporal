@@ -3,7 +3,7 @@ package history
 import (
 	"sync"
 
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	"google.golang.org/grpc"
 )
 
@@ -21,9 +21,9 @@ type (
 			conns map[rpcAddress]clientConnection[C]
 		}
 
-		historyServiceResolver membership.ServiceResolver
-		rpcFactory             RPCFactory
-		clientCtor             func(grpc.ClientConnInterface) C
+		historyShardWatcher ownership.HistoryShardWatcher
+		rpcFactory          RPCFactory
+		clientCtor          func(grpc.ClientConnInterface) C
 	}
 
 	// RPCFactory is a subset of the [go.temporal.io/server/common/rpc.RPCFactory] interface to make testing easier.
@@ -39,14 +39,14 @@ type (
 )
 
 func NewConnectionPool[C any](
-	historyServiceResolver membership.ServiceResolver,
+	historyShardWatcher ownership.HistoryShardWatcher,
 	rpcFactory RPCFactory,
 	clientCtor func(grpc.ClientConnInterface) C,
 ) *connectionPoolImpl[C] {
 	c := &connectionPoolImpl[C]{
-		historyServiceResolver: historyServiceResolver,
-		rpcFactory:             rpcFactory,
-		clientCtor:             clientCtor,
+		historyShardWatcher: historyShardWatcher,
+		rpcFactory:          rpcFactory,
+		clientCtor:          clientCtor,
 	}
 	c.mu.conns = make(map[rpcAddress]clientConnection[C])
 	return c
@@ -77,11 +77,11 @@ func (c *connectionPoolImpl[C]) getOrCreateClientConn(addr rpcAddress) clientCon
 }
 
 func (c *connectionPoolImpl[C]) getAllClientConns() []clientConnection[C] {
-	hostInfos := c.historyServiceResolver.Members()
+	owners := c.historyShardWatcher.Owners()
 
 	var clientConns []clientConnection[C]
-	for _, hostInfo := range hostInfos {
-		cc := c.getOrCreateClientConn(rpcAddress(hostInfo.GetAddress()))
+	for _, owner := range owners {
+		cc := c.getOrCreateClientConn(rpcAddress(owner))
 		clientConns = append(clientConns, cc)
 	}
 

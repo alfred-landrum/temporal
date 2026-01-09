@@ -50,7 +50,7 @@ func (s *ownershipSuite) newController(contextFactory ContextFactory) *Controlle
 	return ControllerProvider(
 		s.config,
 		s.resource.GetLogger(),
-		s.resource.GetHistoryServiceResolver(),
+		s.resource.GetHistoryShardWatcher(),
 		s.resource.GetMetricsHandler(),
 		s.resource.GetHostInfoProvider(),
 		contextFactory,
@@ -76,16 +76,28 @@ func (s *ownershipSuite) TestAcquireViaMembershipUpdate() {
 		Lookup(convert.Int32ToString(shardID)).
 		Return(s.resource.GetHostInfo(), nil).AnyTimes()
 
+	var notifyChannel chan<- *membership.ChangedEvent
+	chSet := make(chan struct{}, 1)
 	s.resource.HistoryServiceResolver.EXPECT().
 		AddListener(shardControllerMembershipUpdateListenerName, gomock.Any()).
-		Return(nil).Times(1)
+		DoAndReturn(func(_ string, c chan<- *membership.ChangedEvent) error {
+			notifyChannel = c
+			chSet <- struct{}{}
+			return nil
+		}).
+		Times(1)
 
 	shardController := s.newController(cf)
 	shardController.Start()
 
 	s.Zero(len(shardController.ShardIDs()))
 
-	shardController.ownership.membershipUpdateCh <- &membership.ChangedEvent{}
+	select {
+	case <-s.T().Context().Done():
+		s.Fail("timed out waiting for membership channel set")
+	case <-chSet:
+	}
+	notifyChannel <- &membership.ChangedEvent{}
 
 	s.Eventually(func() bool {
 		shardIDs := shardController.ShardIDs()

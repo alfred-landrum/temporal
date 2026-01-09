@@ -22,7 +22,7 @@ type testCluster struct {
 	hostUUIDs    []string
 	hostAddrs    []string
 	hostInfoList []membership.HostInfo
-	rings        []*monitor
+	rings        []*Monitor
 	channels     []*tchannel.Channel
 	seedNode     string
 }
@@ -53,7 +53,7 @@ func newTestCluster(
 		hostUUIDs:    make([]string, size),
 		hostAddrs:    make([]string, size),
 		hostInfoList: make([]membership.HostInfo, size),
-		rings:        make([]*monitor, size),
+		rings:        make([]*Monitor, size),
 		channels:     make([]*tchannel.Channel, size),
 		seedNode:     seed,
 	}

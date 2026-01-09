@@ -11,8 +11,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/api/historyservice/v1"
 	"go.temporal.io/server/api/historyservicemock/v1"
-	"go.temporal.io/server/common/convert"
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	serviceerrors "go.temporal.io/server/common/serviceerror"
 	"go.uber.org/mock/gomock"
 )
@@ -24,7 +23,7 @@ type (
 
 		controller  *gomock.Controller
 		connections *mockConnectionPool[historyservice.HistoryServiceClient]
-		resolver    *membership.MockServiceResolver
+		watcher     *ownership.MockHistoryShardWatcher
 	}
 )
 
@@ -50,12 +49,12 @@ func TestBasicRedirectorSuite(t *testing.T) {
 func (s *basicRedirectorSuite) SetupTest() {
 	s.Assertions = require.New(s.T())
 	s.controller = gomock.NewController(s.T())
-	s.resolver = membership.NewMockServiceResolver(s.controller)
+	s.watcher = ownership.NewMockHistoryShardWatcher(s.controller)
 	s.connections = &mockConnectionPool[historyservice.HistoryServiceClient]{}
 }
 
 func (s *basicRedirectorSuite) TestShardCheck() {
-	r := NewBasicRedirector(s.connections, s.resolver)
+	r := NewBasicRedirector(s.connections, s.watcher)
 
 	invalErr := &serviceerror.InvalidArgument{}
 	err := r.Execute(
@@ -74,15 +73,15 @@ func opErrorTest(s *basicRedirectorSuite, clientOp ClientOperation[historyservic
 	testAddr := rpcAddress("testaddr")
 	shardID := int32(1)
 
-	s.resolver.EXPECT().
-		Lookup(convert.Int32ToString(shardID)).
-		Return(membership.NewHostInfoFromAddress(string(testAddr)), nil).
+	s.watcher.EXPECT().
+		OwnershipStatus(shardID).
+		Return(ownership.Status{Owner: ownership.Address(testAddr)}, nil).
 		Times(1)
 
 	mockClient := historyservicemock.NewMockHistoryServiceClient(s.controller)
 	s.connections.client = mockClient
 
-	r := NewBasicRedirector(s.connections, s.resolver)
+	r := NewBasicRedirector(s.connections, s.watcher)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -118,15 +117,15 @@ func (s *basicRedirectorSuite) TestShardOwnershipLostErrors() {
 	testAddr2 := rpcAddress("testaddr2")
 	shardID := int32(1)
 
-	s.resolver.EXPECT().
-		Lookup(convert.Int32ToString(shardID)).
-		Return(membership.NewHostInfoFromAddress(string(testAddr1)), nil).
+	s.watcher.EXPECT().
+		OwnershipStatus(shardID).
+		Return(ownership.Status{Owner: ownership.Address(testAddr1)}, nil).
 		Times(2)
 
 	mockClient := historyservicemock.NewMockHistoryServiceClient(s.controller)
 	s.connections.client = mockClient
 
-	r := NewBasicRedirector(s.connections, s.resolver)
+	r := NewBasicRedirector(s.connections, s.watcher)
 	attempt := 1
 	doExecute := func() error {
 		return r.Execute(
@@ -162,14 +161,14 @@ func (s *basicRedirectorSuite) TestClientForTargetByShard() {
 	testAddr := rpcAddress("testaddr")
 	shardID := int32(1)
 
-	s.resolver.EXPECT().
-		Lookup(convert.Int32ToString(shardID)).
-		Return(membership.NewHostInfoFromAddress(string(testAddr)), nil).
+	s.watcher.EXPECT().
+		OwnershipStatus(shardID).
+		Return(ownership.Status{Owner: ownership.Address(testAddr)}, nil).
 		Times(1)
 
 	mockClient := historyservicemock.NewMockHistoryServiceClient(s.controller)
 	s.connections.client = mockClient
-	r := NewBasicRedirector(s.connections, s.resolver)
+	r := NewBasicRedirector(s.connections, s.watcher)
 	cli, err := r.clientForShardID(shardID)
 	s.NoError(err)
 	s.Equal(mockClient, cli)

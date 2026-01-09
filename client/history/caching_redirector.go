@@ -3,18 +3,16 @@ package history
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/common"
 	"go.temporal.io/server/common/dynamicconfig"
 	"go.temporal.io/server/common/goro"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	serviceerrors "go.temporal.io/server/common/serviceerror"
 )
 
@@ -37,29 +35,25 @@ type (
 			cache map[int32]cacheEntry[C]
 		}
 
-		connections            connectionPool[C]
-		goros                  goro.Group
-		historyServiceResolver membership.ServiceResolver
-		logger                 log.Logger
-		membershipUpdateCh     chan *membership.ChangedEvent
-		staleTTL               dynamicconfig.DurationPropertyFn
-		listenerName           string
+		connections         connectionPool[C]
+		goros               goro.Group
+		historyShardWatcher ownership.HistoryShardWatcher
+		logger              log.Logger
+		staleTTL            dynamicconfig.DurationPropertyFn
 	}
 )
 
 func NewCachingRedirector[C any](
 	connections connectionPool[C],
-	historyServiceResolver membership.ServiceResolver,
+	historyShardWatcher ownership.HistoryShardWatcher,
 	logger log.Logger,
 	staleTTL dynamicconfig.DurationPropertyFn,
 ) *CachingRedirector[C] {
 	r := &CachingRedirector[C]{
-		connections:            connections,
-		historyServiceResolver: historyServiceResolver,
-		logger:                 logger,
-		membershipUpdateCh:     make(chan *membership.ChangedEvent, 1),
-		staleTTL:               staleTTL,
-		listenerName:           fmt.Sprintf("cachingRedirectorListener-%s", uuid.New().String()),
+		connections:         connections,
+		historyShardWatcher: historyShardWatcher,
+		logger:              logger,
+		staleTTL:            staleTTL,
 	}
 	r.mu.cache = make(map[int32]cacheEntry[C])
 
@@ -145,7 +139,7 @@ func (r *CachingRedirector[C]) getOrCreateEntry(shardID int32) (cacheEntry[C], e
 		delete(r.mu.cache, shardID)
 	}
 
-	address, err := shardLookup(r.historyServiceResolver, shardID)
+	address, err := shardLookup(r.historyShardWatcher, shardID)
 	if err != nil {
 		return cacheEntry[C]{}, err
 	}
@@ -222,20 +216,14 @@ func maybeHostDownError(opErr error) bool {
 }
 
 func (r *CachingRedirector[C]) eventLoop(ctx context.Context) error {
-	if err := r.historyServiceResolver.AddListener(r.listenerName, r.membershipUpdateCh); err != nil {
-		r.logger.Fatal("Error adding listener", tag.Error(err))
-	}
-	defer func() {
-		if err := r.historyServiceResolver.RemoveListener(r.listenerName); err != nil {
-			r.logger.Warn("Error removing listener", tag.Error(err))
-		}
-	}()
+	ownershipUpdateCh, release := r.historyShardWatcher.AcquireNotifyChannel()
+	defer release()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-r.membershipUpdateCh:
+		case <-ownershipUpdateCh:
 			r.staleCheck()
 		}
 	}
@@ -256,7 +244,7 @@ func (r *CachingRedirector[C]) staleCheck() {
 			continue
 		}
 		if staleTTL > 0 {
-			addr, err := shardLookup(r.historyServiceResolver, shardID)
+			addr, err := shardLookup(r.historyShardWatcher, shardID)
 			if err != nil || addr != entry.address {
 				entry.staleAt = now.Add(staleTTL)
 				r.mu.cache[shardID] = entry

@@ -11,6 +11,7 @@ import (
 	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/membership"
 	"go.temporal.io/server/common/metrics"
+	"go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/persistence/visibility/manager"
 	"go.temporal.io/server/common/util"
 	"go.temporal.io/server/service/history/configs"
@@ -35,6 +36,7 @@ type (
 		healthServer      *health.Server
 		readinessCancel   context.CancelFunc
 		chasmRegistry     *chasm.Registry
+		historyShardOwner ownership.HistoryShardOwner
 	}
 )
 
@@ -49,6 +51,7 @@ func NewService(
 	metricsHandler metrics.Handler,
 	healthServer *health.Server,
 	chasmRegistry *chasm.Registry,
+	historyShardOwner ownership.HistoryShardOwner,
 ) *Service {
 	return &Service{
 		server:            server,
@@ -61,6 +64,7 @@ func NewService(
 		metricsHandler:    metricsHandler,
 		healthServer:      healthServer,
 		chasmRegistry:     chasmRegistry,
+		historyShardOwner: historyShardOwner,
 	}
 }
 
@@ -111,11 +115,15 @@ func (s *Service) Start() {
 		}
 		s.membershipMonitor.Start()
 	}()
+
+	s.historyShardOwner.ReportAccepting()
 }
 
 // Stop stops the service
 func (s *Service) Stop() {
 	s.readinessCancel()
+
+	s.historyShardOwner.ReportStopping()
 
 	// remove self from membership ring and wait for traffic to drain
 	var err error

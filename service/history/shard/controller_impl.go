@@ -17,6 +17,7 @@ import (
 	"go.temporal.io/server/common/membership"
 	"go.temporal.io/server/common/metrics"
 	"go.temporal.io/server/common/namespace"
+	pownership "go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/persistence"
 	"go.temporal.io/server/common/pingable"
 	serviceerrors "go.temporal.io/server/common/serviceerror"
@@ -70,7 +71,8 @@ var _ Controller = (*ControllerImpl)(nil)
 func ControllerProvider(
 	config *configs.Config,
 	logger log.Logger,
-	historyServiceResolver membership.ServiceResolver,
+	ownershipWatcher pownership.HistoryShardWatcher,
+	reporter pownership.HistoryShardOwner,
 	metricsHandler metrics.Handler,
 	hostInfoProvider membership.HostInfoProvider,
 	contextFactory ContextFactory,
@@ -81,10 +83,10 @@ func ControllerProvider(
 
 	ownership := newOwnership(
 		config,
-		historyServiceResolver,
+		ownershipWatcher,
+		reporter,
 		hostInfoProvider,
 		contextTaggedLogger,
-		taggedMetricsHandler,
 	)
 
 	c := &ControllerImpl{
@@ -255,8 +257,8 @@ func (c *ControllerImpl) getOrCreateShardContext(shardID int32) (historyi.Contro
 		_ = c.removeShardLocked(shardID, shard)
 	}
 
-	if err := c.ownership.verifyOwnership(shardID); err != nil {
-		return nil, err
+	if action, owner := c.ownership.shouldAcquire(false /*isAcquired*/, shardID); action != shardAcquireActionAcquire {
+		return nil, serviceerrors.NewShardOwnershipLost(owner, c.hostInfoProvider.HostInfo().GetAddress())
 	}
 
 	if atomic.LoadInt32(&c.status) == common.DaemonStatusStopped {
@@ -269,6 +271,8 @@ func (c *ControllerImpl) getOrCreateShardContext(shardID int32) (historyi.Contro
 		return nil, err
 	}
 	c.historyShards[shardID] = shard
+	c.ownership.shardAcquired(shardID)
+
 	metrics.ShardContextCreatedCounter.With(c.taggedMetricsHandler).Record(1)
 	c.contextTaggedLogger.Info("", numShardsTag(len(c.historyShards)))
 
@@ -293,6 +297,7 @@ func (c *ControllerImpl) removeShardLocked(shardID int32, expected historyi.Cont
 	}
 
 	delete(c.historyShards, shardID)
+	c.ownership.shardReleased(shardID)
 	c.contextTaggedLogger.Info("", numShardsTag(len(c.historyShards)))
 	metrics.ShardContextRemovedCounter.With(c.taggedMetricsHandler).Record(1)
 
@@ -408,15 +413,21 @@ func (c *ControllerImpl) acquireShards(ctx context.Context) {
 	var ownedShards []int32 // only populated if we are doing a readiness check
 
 	tryAcquire := func(shardID int32) {
-		if err := c.ownership.verifyOwnership(shardID); err != nil {
-			if IsShardOwnershipLostError(err) {
-				// current host is not owner of shard, unload it if it is already loaded.
-				if c.config.ShardLingerTimeLimit() > 0 {
-					c.shardLingerThenClose(ctx, shardID)
-				} else {
-					c.CloseShardByID(shardID)
-				}
+		isValid := c.isShardValid(shardID)
+		action, _ := c.ownership.shouldAcquire(isValid, shardID)
+		switch action {
+		case shardAcquireActionAcquire:
+			// acquire action below
+		case shardAcquireActionRelease:
+			// current host is not owner of shard, unload it if it is already loaded.
+			if c.config.ShardLingerTimeLimit() > 0 {
+				c.shardLingerThenClose(ctx, shardID)
+			} else {
+				c.CloseShardByID(shardID)
 			}
+			return
+		default:
+			// shardAcquireActionNone or unknown: do nothing.
 			return
 		}
 
@@ -563,6 +574,16 @@ func (c *ControllerImpl) SubscribeShardCount() ShardCountSubscription {
 	}
 	c.shardCountSubscriptions[sub] = struct{}{}
 	return sub
+}
+
+func (c *ControllerImpl) isShardValid(shardID int32) bool {
+	c.RLock()
+	defer c.RUnlock()
+	shard, ok := c.historyShards[shardID]
+	if !ok {
+		return false
+	}
+	return shard.IsValid()
 }
 
 // ShardCount returns a channel that receives the current shard count. This channel will be closed when the subscription

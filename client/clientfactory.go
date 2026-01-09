@@ -19,6 +19,7 @@ import (
 	"go.temporal.io/server/common/membership"
 	"go.temporal.io/server/common/metrics"
 	"go.temporal.io/server/common/namespace"
+	"go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/primitives"
 	"go.temporal.io/server/common/testing/testhooks"
 	"google.golang.org/grpc"
@@ -46,6 +47,7 @@ type (
 			numberOfHistoryShards int32,
 			logger log.Logger,
 			throttledLogger log.Logger,
+			historyShardWatcher ownership.HistoryShardWatcher,
 		) Factory
 	}
 
@@ -61,6 +63,7 @@ type (
 		numberOfHistoryShards int32
 		logger                log.Logger
 		throttledLogger       log.Logger
+		historyShardWatcher   ownership.HistoryShardWatcher
 	}
 
 	factoryProviderImpl struct {
@@ -86,6 +89,7 @@ func (p *factoryProviderImpl) NewFactory(
 	numberOfHistoryShards int32,
 	logger log.Logger,
 	throttledLogger log.Logger,
+	historyShardWatcher ownership.HistoryShardWatcher,
 ) Factory {
 	return &rpcClientFactory{
 		rpcFactory:            rpcFactory,
@@ -96,17 +100,14 @@ func (p *factoryProviderImpl) NewFactory(
 		numberOfHistoryShards: numberOfHistoryShards,
 		logger:                logger,
 		throttledLogger:       throttledLogger,
+		historyShardWatcher:   historyShardWatcher,
 	}
 }
 
 func (cf *rpcClientFactory) NewHistoryClientWithTimeout(timeout time.Duration) (historyservice.HistoryServiceClient, error) {
-	resolver, err := cf.monitor.GetResolver(primitives.HistoryService)
-	if err != nil {
-		return nil, err
-	}
 	client := history.NewClient(
 		cf.dynConfig,
-		resolver,
+		cf.historyShardWatcher,
 		cf.logger,
 		cf.numberOfHistoryShards,
 		cf.rpcFactory,

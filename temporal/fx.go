@@ -36,6 +36,7 @@ import (
 	"go.temporal.io/server/common/membership/ringpop"
 	"go.temporal.io/server/common/membership/static"
 	"go.temporal.io/server/common/metrics"
+	"go.temporal.io/server/common/ownership/memberbased"
 	"go.temporal.io/server/common/persistence"
 	"go.temporal.io/server/common/persistence/cassandra"
 	persistenceClient "go.temporal.io/server/common/persistence/client"
@@ -379,7 +380,7 @@ type (
 // into fx providers here. Essentially, we want an `fx.In` object in the server graph, and an `fx.Out` object in the
 // service graphs. This is a workaround to achieve something similar.
 func (params ServiceProviderParamsCommon) GetCommonServiceOptions(serviceName primitives.ServiceName) fx.Option {
-	membershipModule := ringpop.MembershipModule
+	membershipModule := ringpop.RingpopMembershipModule
 	if len(params.StaticServiceHosts) > 0 {
 		membershipModule = static.MembershipModule(params.StaticServiceHosts)
 	}
@@ -446,6 +447,7 @@ func (params ServiceProviderParamsCommon) GetCommonServiceOptions(serviceName pr
 		membershipModule,
 		FxLogAdapter,
 		ChasmLibraryOptions,
+		memberbased.Module,
 	)
 }
 

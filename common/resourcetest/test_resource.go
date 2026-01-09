@@ -20,6 +20,7 @@ import (
 	"go.temporal.io/server/common/membership"
 	"go.temporal.io/server/common/metrics"
 	"go.temporal.io/server/common/namespace"
+	"go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/persistence"
 	"go.temporal.io/server/common/persistence/serialization"
 	"go.temporal.io/server/common/persistence/visibility/manager"
@@ -59,6 +60,8 @@ type (
 		MatchingServiceResolver *membership.MockServiceResolver
 		HistoryServiceResolver  *membership.MockServiceResolver
 		WorkerServiceResolver   *membership.MockServiceResolver
+		HistoryShardWatcher     *ownership.MockHistoryShardWatcher
+		HistoryShardOwner       *ownership.MockHistoryShardOwner
 
 		// internal services clients
 
@@ -125,6 +128,7 @@ func NewTest(controller *gomock.Controller, serviceName primitives.ServiceName) 
 	matchingServiceResolver := membership.NewMockServiceResolver(controller)
 	historyServiceResolver := membership.NewMockServiceResolver(controller)
 	workerServiceResolver := membership.NewMockServiceResolver(controller)
+	historyShardWatcher := ownership.NewMockHistoryShardWatcher(controller)
 	membershipMonitor.EXPECT().GetResolver(primitives.FrontendService).Return(frontendServiceResolver, nil).AnyTimes()
 	membershipMonitor.EXPECT().GetResolver(primitives.InternalFrontendService).Return(nil, membership.ErrUnknownService).AnyTimes()
 	membershipMonitor.EXPECT().GetResolver(primitives.MatchingService).Return(matchingServiceResolver, nil).AnyTimes()
@@ -161,6 +165,7 @@ func NewTest(controller *gomock.Controller, serviceName primitives.ServiceName) 
 		MatchingServiceResolver: matchingServiceResolver,
 		HistoryServiceResolver:  historyServiceResolver,
 		WorkerServiceResolver:   workerServiceResolver,
+		HistoryShardWatcher:     historyShardWatcher,
 
 		// internal services clients
 
@@ -288,6 +293,16 @@ func (t *Test) GetHistoryServiceResolver() membership.ServiceResolver {
 // GetWorkerServiceResolver for testing
 func (t *Test) GetWorkerServiceResolver() membership.ServiceResolver {
 	return t.WorkerServiceResolver
+}
+
+// GetHistoryShardWatcher for testing
+func (t *Test) GetHistoryShardWatcher() ownership.HistoryShardWatcher {
+	return t.HistoryShardWatcher
+}
+
+// GetHistoryShardStatusReporter for testing
+func (t *Test) GetHistoryShardStatusReporter() ownership.HistoryShardOwner {
+	return t.HistoryShardOwner
 }
 
 // internal services clients

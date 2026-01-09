@@ -5,9 +5,10 @@ import (
 	"go.uber.org/fx"
 )
 
-// MembershipModule provides membership objects given the types in factoryParams.
-var MembershipModule = fx.Provide(
+// RingpopMembershipModule provides membership objects given the types in factoryParams.
+var RingpopMembershipModule = fx.Provide(
 	provideFactory,
+	provideMonitor,
 	provideMembership,
 	provideHostInfoProvider,
 )
@@ -21,12 +22,16 @@ func provideFactory(lc fx.Lifecycle, params factoryParams) (*factory, error) {
 	return f, nil
 }
 
-func provideMembership(lc fx.Lifecycle, f *factory) membership.Monitor {
+func provideMonitor(lc fx.Lifecycle, f *factory) *Monitor {
 	m := f.getMonitor()
 	lc.Append(fx.StopHook(m.Stop))
 	return m
 }
 
-func provideHostInfoProvider(lc fx.Lifecycle, f *factory) (membership.HostInfoProvider, error) {
+func provideMembership(m *Monitor) membership.Monitor {
+	return m
+}
+
+func provideHostInfoProvider(f *factory) (membership.HostInfoProvider, error) {
 	return f.getHostInfoProvider()
 }

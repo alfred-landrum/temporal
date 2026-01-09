@@ -18,7 +18,7 @@ import (
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
-	"go.temporal.io/server/common/membership"
+	"go.temporal.io/server/common/ownership"
 	"go.temporal.io/server/common/tasktoken"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -45,26 +45,26 @@ type clientImpl struct {
 // NewClient creates a new history service gRPC client
 func NewClient(
 	dc *dynamicconfig.Collection,
-	historyServiceResolver membership.ServiceResolver,
+	historyShardWatcher ownership.HistoryShardWatcher,
 	logger log.Logger,
 	numberOfShards int32,
 	rpcFactory RPCFactory,
 	timeout time.Duration,
 ) historyservice.HistoryServiceClient {
-	connections := NewConnectionPool(historyServiceResolver, rpcFactory, historyservice.NewHistoryServiceClient)
+	connections := NewConnectionPool(historyShardWatcher, rpcFactory, historyservice.NewHistoryServiceClient)
 
 	var redirector Redirector[historyservice.HistoryServiceClient]
 	if dynamicconfig.HistoryClientOwnershipCachingEnabled.Get(dc)() {
 		logger.Info("historyClient: ownership caching enabled")
 		redirector = NewCachingRedirector(
 			connections,
-			historyServiceResolver,
+			historyShardWatcher,
 			logger,
 			dynamicconfig.HistoryClientOwnershipCachingStaleTTL.Get(dc),
 		)
 	} else {
 		logger.Info("historyClient: ownership caching disabled")
-		redirector = NewBasicRedirector(connections, historyServiceResolver)
+		redirector = NewBasicRedirector(connections, historyShardWatcher)
 	}
 
 	return &clientImpl{
