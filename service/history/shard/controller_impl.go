@@ -534,6 +534,8 @@ func (c *ControllerImpl) checkShardReadiness(
 // publishShardCountUpdate publishes the current number of shards that this controller owns to all shard count
 // subscribers in a non-blocking manner.
 func (c *ControllerImpl) publishShardCountUpdate(shardCount int) {
+	c.contextTaggedLogger.Info("alfred: publishing shard count update",
+		tag.Int("shardCount", shardCount))
 	c.RLock()
 	defer c.RUnlock()
 	for sub := range c.shardCountSubscriptions {
