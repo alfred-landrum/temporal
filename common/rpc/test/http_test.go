@@ -43,7 +43,6 @@ func TestCreateLocalFrontendHTTPClient_UsingMembership(t *testing.T) {
 		nil, // No TLS
 		nil,
 		map[primitives.ServiceName][]grpc.DialOption{},
-		monitor,
 	)
 
 	client, err := fact.CreateLocalFrontendHTTPClient()
@@ -75,7 +74,6 @@ func TestCreateLocalFrontendHTTPClient_UsingFixedHostPort(t *testing.T) {
 		nil, // No TLS
 		nil,
 		map[primitives.ServiceName][]grpc.DialOption{},
-		nil, // monitor should not be used
 	)
 
 	client, err := fact.CreateLocalFrontendHTTPClient()
@@ -108,7 +106,6 @@ func TestCreateLocalFrontendHTTPClient_UsingFixedHostPort_AndTLS(t *testing.T) {
 		tlsConfig,
 		nil,
 		map[primitives.ServiceName][]grpc.DialOption{},
-		nil, // monitor should not be used
 	)
 
 	client, err := fact.CreateLocalFrontendHTTPClient()

@@ -765,7 +765,6 @@ func (c *TemporalImpl) newRPCFactory(
 	logger log.Logger,
 	grpcResolver *membership.GRPCResolver,
 	tlsConfigProvider encryption.TLSConfigProvider,
-	monitor membership.Monitor,
 	tracingStatsHandler telemetry.ClientStatsHandler,
 	grpcClientInterceptor *grpcinject.Interceptor,
 	httpPort httpPort,
@@ -822,7 +821,6 @@ func (c *TemporalImpl) newRPCFactory(
 		frontendTLSConfig,
 		options,
 		map[primitives.ServiceName][]grpc.DialOption{},
-		monitor,
 	), nil
 }
 

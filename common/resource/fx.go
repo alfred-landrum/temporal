@@ -399,7 +399,6 @@ func RPCFactoryProvider(
 	resolver *membership.GRPCResolver,
 	tracingStatsHandler telemetry.ClientStatsHandler,
 	perServiceDialOptions map[primitives.ServiceName][]grpc.DialOption,
-	monitor membership.Monitor,
 	dc *dynamicconfig.Collection,
 ) (common.RPCFactory, error) {
 	frontendURL, frontendHTTPURL, frontendHTTPPort, frontendTLSConfig, err := getFrontendConnectionDetails(cfg, tlsConfigProvider, resolver)
@@ -425,7 +424,6 @@ func RPCFactoryProvider(
 		frontendTLSConfig,
 		options,
 		perServiceDialOptions,
-		monitor,
 	)
 	factory.EnableInternodeServerKeepalive = enableServerKeepalive
 	factory.EnableInternodeClientKeepalive = enableClientKeepalive

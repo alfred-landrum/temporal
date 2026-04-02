@@ -46,7 +46,6 @@ type RPCFactory struct {
 	tlsFactory            encryption.TLSConfigProvider
 	commonDialOptions     []grpc.DialOption
 	perServiceDialOptions map[primitives.ServiceName][]grpc.DialOption
-	monitor               membership.Monitor
 	// A OnceValues wrapper for createLocalFrontendHTTPClient.
 	localFrontendClient      func() (*common.FrontendHTTPClient, error)
 	interNodeGrpcConnections cache.Cache
@@ -70,7 +69,6 @@ func NewFactory(
 	frontendTLSConfig *tls.Config,
 	commonDialOptions []grpc.DialOption,
 	perServiceDialOptions map[primitives.ServiceName][]grpc.DialOption,
-	monitor membership.Monitor,
 ) *RPCFactory {
 	f := &RPCFactory{
 		config:                cfg,
@@ -84,7 +82,6 @@ func NewFactory(
 		tlsFactory:            tlsProvider,
 		commonDialOptions:     commonDialOptions,
 		perServiceDialOptions: perServiceDialOptions,
-		monitor:               monitor,
 	}
 	f.grpcListener = sync.OnceValue(f.createGRPCListener)
 	f.localFrontendClient = sync.OnceValues(f.createLocalFrontendHTTPClient)
